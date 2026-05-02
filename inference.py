@@ -1,213 +1,118 @@
-"""
-inference.py — MANDATORY entry point for the hackathon judges.
-
-Usage:
-    python inference.py --input input.json --output output.json
-
-input.json  format (list of queries):
-    [
-      {"query_id": "q1", "query": "ordinary portland cement 33 grade"},
-      {"query_id": "q2", "query": "fly ash cement specifications"},
-      ...
-    ]
-
-output.json format (list of predictions):
-    [
-      {
-        "query_id": "q1",
-        "query":    "ordinary portland cement 33 grade",
-        "results": [
-          {"rank": 1, "is_number": "IS 269: 1989", "title": "...", "score": 0.0421, "category": "Cement"},
-          ...
-        ]
-      },
-      ...
-    ]
-"""
-
 import argparse
-import json
-import sys
 import time
 from pathlib import Path
+import sys
 
-# ── project imports ────────────────────────────────────────────────────────
-from utils import (
+# Fix import path
+ROOT = Path(__file__).resolve().parent
+SRC  = ROOT / "src"
+sys.path.append(str(SRC))
+
+from src.search_engine import bm25_search, faiss_search, _ensure_loaded
+from src.utils import (
     load_json, save_json,
     clean_query, expand_query,
-    rrf_fuse, deduplicate_results, validate_against_chunks,
-    normalise_is_number, CHUNKS_PATH, RESULTS_DIR,
+    rrf_fuse, deduplicate_results,
+    validate_against_chunks,
+    normalise_is_number, CHUNKS_PATH,
 )
 
-# ── search engine (Person 2's deliverable) ────────────────────────────────
-try:
-    from Search_engine import bm25_search, faiss_search
-    _SEARCH_ENGINE_AVAILABLE = True
-except ImportError as e:
-    _SEARCH_ENGINE_AVAILABLE = False
-    print(f"[inference] Search engine unavailable ({e}).")
+# ── Cross-encoder (optional, disable for speed) ───────────────────────────
+USE_CROSS_ENCODER = False
 
-
-# ── optional cross-encoder (Person 3 dependency) ──────────────────────────
-try:
+if USE_CROSS_ENCODER:
     from sentence_transformers import CrossEncoder
-    _CE_MODEL = CrossEncoder("cross-encoder/ms-marco-MiniLM-L-6-v2")
-    _CROSS_ENCODER_AVAILABLE = True
-    print("[inference] Cross-encoder loaded ✓")
-except Exception as e:
-    _CROSS_ENCODER_AVAILABLE = False
-    print(f"[inference] Cross-encoder unavailable ({e}). Falling back to RRF scores.")
+    ce = CrossEncoder("cross-encoder/ms-marco-MiniLM-L-6-v2")
 
 
-# ── constants ──────────────────────────────────────────────────────────────
-BM25_TOP_K      = 20   # candidates from BM25
-FAISS_TOP_K     = 20   # candidates from FAISS
-RRF_TOP_N       = 10   # after fusion
-RERANK_TOP_N    = 10   # fed into cross-encoder
-FINAL_TOP_N     = 5    # returned per query
+def rerank(query, candidates):
+    if not USE_CROSS_ENCODER:
+        return candidates
+
+    pairs  = [(query, c["title"] + " " + c["content"][:300]) for c in candidates]
+    scores = ce.predict(pairs)
+    for c, s in zip(candidates, scores):
+        c["score"] = float(s)
+    return sorted(candidates, key=lambda x: x["score"], reverse=True)
 
 
-# ──────────────────────────────────────────────────────────────────────────
-# Core pipeline
-# ──────────────────────────────────────────────────────────────────────────
-
-def _cross_encoder_rerank(query: str, candidates: list[dict], top_n: int) -> list[dict]:
-    """Rerank *candidates* with the cross-encoder and return top_n."""
-    if not _CROSS_ENCODER_AVAILABLE or not candidates:
-        return candidates[:top_n]
-
-    pairs = [(query, c.get("title", "") + " " + c.get("content", "")[:512])
-             for c in candidates]
-    ce_scores = _CE_MODEL.predict(pairs)
-
-    for cand, ce_score in zip(candidates, ce_scores):
-        cand["score"] = float(ce_score)
-
-    reranked = sorted(candidates, key=lambda x: x["score"], reverse=True)
-    return reranked[:top_n]
-
-
-def run_pipeline(query: str, chunks: list[dict]) -> list[dict]:
+def pipeline(query, chunks):
     """
-    Full retrieval pipeline for a single query.
-    Returns a list of result dicts, ranked best-first.
+    Retrieval pipeline with weighted RRF.
+
+    Key fixes:
+    - BM25  receives cleaned + expanded query (extra synonym tokens boost recall).
+    - FAISS receives the ORIGINAL natural-language query (sentence embeddings work
+      best on natural text; cleaning/expansion degrades semantic similarity).
+    - top_k raised to 20 for a wider candidate pool before RRF fusion.
+    - FAISS counted twice in RRF (×2 semantic weight) to favour meaning over keywords.
     """
-    # Step 1: query processing
-    cleaned  = clean_query(query)
-    expanded = expand_query(cleaned)
+    q_bm25  = expand_query(clean_query(query))  # cleaned + expanded → BM25
+    q_faiss = query.strip()                      # original natural text → FAISS
 
-    # Step 2: dual retrieval
-    bm25_results  = bm25_search(expanded,  top_k=BM25_TOP_K)
-    faiss_results = faiss_search(expanded, top_k=FAISS_TOP_K)
+    bm25_results  = bm25_search(q_bm25,  top_k=20)
+    faiss_results = faiss_search(q_faiss, top_k=20)
 
-    # Step 3: RRF fusion
-    fused = rrf_fuse(bm25_results, faiss_results, k=60, top_n=RRF_TOP_N)
+    # Weighted RRF: FAISS counted twice → semantic weight = 2× BM25
+    fused    = rrf_fuse(bm25_results, faiss_results, faiss_results, top_n=10)
 
-    # Step 4: cross-encoder rerank
-    reranked = _cross_encoder_rerank(query, fused[:RERANK_TOP_N], top_n=FINAL_TOP_N)
+    reranked = rerank(query, fused)
+    dedup    = deduplicate_results(reranked)
+    valid    = validate_against_chunks(dedup, chunks)
 
-    # Step 5: post-processing
-    deduped   = deduplicate_results(reranked)
-    validated = validate_against_chunks(deduped, chunks)
-
-    # Normalise IS numbers and add final ranks
-    final = []
-    for rank, item in enumerate(validated[:FINAL_TOP_N], start=1):
-        final.append({
-            "rank":      rank,
-            "is_number": normalise_is_number(item.get("is_number", "")),
-            "title":     item.get("title", ""),
-            "category":  item.get("category", ""),
-            "score":     round(item.get("score", 0.0), 6),
-        })
-
-    return final
+    # Flat list of normalised IS numbers, top-5
+    return [normalise_is_number(r["is_number"]) for r in valid[:5]]
 
 
-# ──────────────────────────────────────────────────────────────────────────
-# CLI entry point
-# ──────────────────────────────────────────────────────────────────────────
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--input",  required=True)
+    parser.add_argument("--output", required=True)
+    args = parser.parse_args()
 
-def parse_args() -> argparse.Namespace:
-    p = argparse.ArgumentParser(
-        description="IS-standard retrieval — inference entry point"
-    )
-    p.add_argument("--input",  required=True, help="Path to input JSON file")
-    p.add_argument("--output", required=True, help="Path to write output JSON file")
-    p.add_argument(
-        "--top-n", type=int, default=FINAL_TOP_N,
-        help=f"Number of results per query (default: {FINAL_TOP_N})"
-    )
-    p.add_argument(
-        "--verbose", action="store_true",
-        help="Print per-query results to stdout"
-    )
-    return p.parse_args()
+    queries = load_json(args.input)
+    chunks  = load_json(CHUNKS_PATH)
 
+    # ── Warm-up: load ALL indexes before the query loop ────────────────────
+    # Without this the first query pays cold-start cost (model load + index IO)
+    print("[INFO] Warming up indexes (BM25 + FAISS + embedder)…")
+    t_warm = time.time()
+    _ensure_loaded()
+    bm25_search("warm up",  top_k=1)
+    faiss_search("warm up", top_k=1)
+    print(f"[INFO] Warm-up done in {time.time() - t_warm:.2f}s\n")
 
-def main() -> None:
-    args = parse_args()
+    output = []
+    start  = time.time()
+    print(f"[INFO] Running {len(queries)} queries…\n")
 
-    # ── load input ──────────────────────────────────────────────────────────
-    input_path = Path(args.input)
-    if not input_path.exists():
-        print(f"[ERROR] Input file not found: {input_path}", file=sys.stderr)
-        sys.exit(1)
+    for i, q in enumerate(queries):
+        t0 = time.time()
 
-    queries = load_json(input_path)
-    if isinstance(queries, dict):          # allow single-query dicts too
-        queries = [queries]
+        retrieved = pipeline(q["query"], chunks)
+        latency   = round(time.time() - t0, 2)
 
-    # ── load chunks for validation ──────────────────────────────────────────
-    try:
-        chunks = load_json(CHUNKS_PATH)
-    except FileNotFoundError:
-        print(
-            f"[ERROR] chunks.json not found at {CHUNKS_PATH}. "
-            "Run src/ingestion.py first (Person 1 deliverable).",
-            file=sys.stderr,
-        )
-        sys.exit(1)
-
-    # ── run pipeline ────────────────────────────────────────────────────────
-    output  = []
-    t_start = time.perf_counter()
-
-    print(f"[inference] Processing {len(queries)} queries …")
-    for i, item in enumerate(queries, start=1):
-        query    = item.get("query", "").strip()
-        query_id = item.get("query_id", str(i))
-
-        if not query:
-            print(f"  [!] Query {query_id} is empty — skipping.")
-            continue
-
-        t0      = time.perf_counter()
-        results = run_pipeline(query, chunks)
-        elapsed = time.perf_counter() - t0
+        # Accept both "id" (public_test_set) and "query_id" (transformed) key names
+        record_id = q.get("id") or q.get("query_id") or str(i + 1)
+        # Accept both "expected_standards" and "relevant" key names
+        expected  = q.get("expected_standards") or q.get("relevant") or []
 
         output.append({
-            "query_id": query_id,
-            "query":    query,
-            "results":  results,
+            "id":                  record_id,
+            "query":               q["query"],
+            "expected_standards":  expected,
+            "retrieved_standards": retrieved,
+            "latency_seconds":     latency,
         })
 
-        if args.verbose:
-            print(f"\n── [{i}/{len(queries)}] {query_id}: {query!r}  ({elapsed:.2f}s)")
-            for r in results:
-                print(f"   [{r['rank']}] {r['is_number']}  |  {r['title'][:60]}")
-        else:
-            bar = "#" * i + "." * (len(queries) - i)
-            print(f"\r  [{bar}] {i}/{len(queries)}  {elapsed:.2f}s/q", end="", flush=True)
+        print(f"[{i+1}/{len(queries)}] {q['query'][:70]} → {latency:.2f}s")
 
-    total_time = time.perf_counter() - t_start
-    print(f"\n[inference] Done — {len(output)} queries in {total_time:.1f}s "
-          f"({total_time/max(len(output),1):.2f}s avg)")
+    total_time = round(time.time() - start, 2)
+    avg        = round(total_time / max(len(queries), 1), 2)
+    print(f"\nTotal: {total_time:.2f}s  |  Avg/query: {avg:.2f}s")
 
-    # ── save output ─────────────────────────────────────────────────────────
-    output_path = Path(args.output)
-    save_json(output, output_path)
-    print(f"[inference] Results written → {output_path}")
+    save_json(output, args.output)
+    print(f"[DONE] Saved → {args.output}")
 
 
 if __name__ == "__main__":

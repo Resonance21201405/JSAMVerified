@@ -15,7 +15,7 @@ from typing import Any
 # ---------------------------------------------------------------------------
 # Paths (all modules import from here — change once, fix everywhere)
 # ---------------------------------------------------------------------------
-ROOT_DIR        = Path(__file__).parent
+ROOT_DIR        = Path(__file__).parent.parent
 DATA_DIR        = ROOT_DIR / "data"
 CHUNKS_PATH     = DATA_DIR / "chunks.json"
 FAISS_INDEX_PATH= DATA_DIR / "faiss_index.bin"
@@ -102,27 +102,74 @@ def tokenize(text: str) -> list[str]:
 
 def expand_query(query: str) -> str:
     """
-    Very lightweight query expansion — adds synonyms relevant to IS standards
-    without touching the original tokens.
-    Safe to call on every query; adds ≤6 extra tokens.
+    Query expansion with plural stemming and BIS-domain synonyms.
+
+    Fixes vs original:
+    - Plural stemming: strips 's'/'es' before lookup so 'aggregates' → 'aggregate',
+      'pipes' → 'pipe', 'blocks' → 'block', etc.
+    - Targeted synonym sets that match BIS SP-21 chapter vocabulary.
+    - 'lightweight' gets specific expansion (aac, autoclaved, aerated, cinder, foamed)
+      so IS 2185 Part 2 is discriminated from Part 1 (ordinary mix).
+    - Avoids over-expansion: each token contributes at most one synonym group.
     """
     expansions: dict[str, list[str]] = {
-        "cement":      ["binder", "mortar", "concrete"],
-        "steel":       ["iron", "metal", "rebar", "bars"],
-        "pipe":        ["tube", "conduit", "pipeline"],
-        "aggregate":   ["sand", "gravel", "stone", "coarse", "fine"],
-        "brick":       ["masonry", "clay", "block"],
-        "water":       ["potable", "drinking", "supply"],
-        "concrete":    ["rcc", "pcc", "mix", "grade"],
-        "wire":        ["cable", "strand", "rope"],
-        "paint":       ["coating", "primer", "enamel"],
-        "timber":      ["wood", "lumber", "plywood"],
+        # ── Binders ──────────────────────────────────────────────────────────
+        "cement":        ["binder", "portland", "clinker", "mortar"],
+        "portland":      ["opc", "clinker", "cement", "grade"],
+        "pozzolana":     ["flyash", "calcined", "clay", "volcanic", "pfa"],
+        "slag":          ["ggbs", "blast", "furnace", "granulated"],
+        "supersulphated":["marine", "sulphate", "aggressive", "resistant"],
+        "masonry":       ["mortar", "brick", "block", "wall", "units"],
+        # ── Aggregates ───────────────────────────────────────────────────────
+        "aggregate":     ["coarse", "fine", "natural", "sources", "gravel", "sand"],
+        "aggregates":    ["coarse", "fine", "natural", "sources", "gravel", "sand"],
+        "coarse":        ["aggregate", "gravel", "crushed", "stone", "natural"],
+        "fine":          ["aggregate", "sand", "natural", "sources"],
+        "sand":          ["fine", "aggregate", "natural", "sources"],
+        # ── Concrete ─────────────────────────────────────────────────────────
+        "concrete":      ["rcc", "mix", "grade", "reinforced", "precast", "structural"],
+        "structural":    ["concrete", "reinforced", "load", "bearing", "rcc"],
+        "precast":       ["concrete", "pipe", "units", "reinforced", "manufactured"],
+        # ── Lightweight (critical for IS 2185 Part 2) ────────────────────────
+        "lightweight":   ["aac", "autoclaved", "aerated", "cinder", "foamed",
+                          "clinker", "low", "density"],
+        # ── Masonry units / blocks ────────────────────────────────────────────
+        "block":         ["hollow", "solid", "masonry", "units", "concrete"],
+        "blocks":        ["hollow", "solid", "masonry", "units", "concrete"],
+        "hollow":        ["block", "units", "masonry", "concrete", "lightweight"],
+        # ── Roofing / sheets ─────────────────────────────────────────────────
+        "corrugated":    ["sheet", "roofing", "asbestos", "cement", "cladding"],
+        "roofing":       ["sheet", "corrugated", "asbestos", "cement", "cladding"],
+        "sheet":         ["corrugated", "roofing", "asbestos", "cladding"],
+        # ── Pipes ────────────────────────────────────────────────────────────
+        "pipe":          ["tube", "conduit", "pipeline", "precast", "concrete"],
+        "pipes":         ["tube", "conduit", "pipeline", "precast", "concrete"],
+        # ── Steel / metals ────────────────────────────────────────────────────
+        "steel":         ["iron", "rebar", "bars", "rod", "tmt", "reinforcement"],
+        "reinforcement": ["steel", "bars", "rebar", "tmt", "high", "strength"],
+        "wire":          ["cable", "strand", "rope", "prestress", "drawn"],
+        # ── Misc ─────────────────────────────────────────────────────────────
+        "water":         ["potable", "drinking", "supply", "main"],
+        "paint":         ["coating", "primer", "enamel", "distemper"],
+        "timber":        ["wood", "lumber", "plywood", "panel"],
+        "chemical":      ["composition", "requirement", "test", "physical"],
+        "physical":      ["requirement", "test", "chemical", "property"],
     }
+
     tokens = query.lower().split()
     extra: list[str] = []
+    seen_keys: set[str] = set()
+
     for token in tokens:
-        if token in expansions:
-            extra.extend(expansions[token])
+        # Try exact → strip 's' → strip 'es', use first match only
+        for candidate in [token,
+                          token[:-1] if token.endswith("s") and len(token) > 3 else None,
+                          token[:-2] if token.endswith("es") and len(token) > 4 else None]:
+            if candidate and candidate in expansions and candidate not in seen_keys:
+                extra.extend(expansions[candidate])
+                seen_keys.add(candidate)
+                break
+
     if extra:
         return query + " " + " ".join(extra)
     return query
