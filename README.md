@@ -103,7 +103,7 @@ User Query
 
 ---
 
-## Quick Start
+## Quick Start (in VS code)
 
 ### 1. Install dependencies
 
