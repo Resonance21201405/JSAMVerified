@@ -1,0 +1,18 @@
+# ── Core retrieval ────────────────────────────────────────────────────────────
+scikit-learn>=1.3.0
+numpy>=1.24.0
+
+# ── PDF parsing ───────────────────────────────────────────────────────────────
+pdfplumber>=0.10.0
+
+# ── LLM backends (choose one or more) ────────────────────────────────────────
+groq>=0.9.0                    # FREE — Llama 3 70B via Groq API (recommended)
+anthropic>=0.25.0              # Paid — Claude Haiku / Sonnet
+
+# ── Web UI ────────────────────────────────────────────────────────────────────
+streamlit>=1.35.0
+
+# ── Optional: dense semantic retrieval (better accuracy, not required) ────────
+# Uncomment these lines only if you want FAISS-based dense retrieval:
+# sentence-transformers>=2.7.0
+# faiss-cpu>=1.8.0
