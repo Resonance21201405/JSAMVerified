@@ -225,7 +225,7 @@ python eval_script.py --results results/output.json
 |--------|-------|--------|--------|
 | Hit Rate @3 | **100.0%** | >80% | ✓ |
 | MRR @5 | **1.0000** | >0.70 | ✓ |
-| Avg Latency | **1.26s** | <5s | ✓ |
+| Avg Latency | **0.01s** | <5s | ✓ |
 
 ---
 
