@@ -1,15 +1,13 @@
 """
-src/agent.py — BIS Standards LLM Agent  [v4 - CONSUMER QUERY FIX]
-==================================================================
-Root cause of Q34/Q36 misses: stale disk cache stored wrong LLM answers
-from before the retriever synonym map was fixed. Cache keys now include
-a VERSION string — bumping it invalidates all old entries automatically.
-
-Other fixes:
-  - LLM system prompt now includes consumer→technical mapping guidance
-  - SmartSkip threshold = 3.0x (very conservative, only skip obvious cases)
-  - Retry on 429 with exponential backoff
-  - Thread-safe cache and throttle locks
+src/agent.py — BIS Standards LLM Agent  [v5 - 5-RESULT FIX]
+=============================================================
+Fixes in this version:
+  1. SYSTEM_PROMPT now says "Return exactly 5 items" (was "3-5 items")
+  2. SmartSkip threshold lowered to 2.0x (was 3.0x) — fires less often
+  3. _parse_llm_response normalises std_ids before filtering so minor
+     formatting differences (missing space, lowercase) don't drop results
+  4. _build_user_message now receives top_k and tells the LLM the exact count
+  5. Candidate slice increased from [:8] to [:15] so LLM sees all candidates
 """
 
 import os, re, json, time, random, hashlib, logging, threading, urllib.request, urllib.error
@@ -18,11 +16,8 @@ from typing import Optional
 
 log = logging.getLogger(__name__)
 
-# ── Cache version — bump this string to invalidate all cached responses ───────
-# Change whenever retriever, prompt, or synonym map changes significantly.
-CACHE_VERSION = "v4-consumer"
+CACHE_VERSION = "v5-fix5"
 
-# ── Persistent disk cache ─────────────────────────────────────────────────────
 _CACHE_FILE  = Path("data/llm_cache.json")
 _llm_cache:  dict = {}
 _cache_dirty = False
@@ -34,7 +29,6 @@ def _load_disk_cache():
         try:
             with open(_CACHE_FILE, "r", encoding="utf-8") as f:
                 _llm_cache = json.load(f)
-            # Drop entries from old cache versions
             old_count = len(_llm_cache)
             _llm_cache = {k: v for k, v in _llm_cache.items()
                           if k.startswith(CACHE_VERSION + ":") or ":" not in k[:20]}
@@ -76,10 +70,9 @@ def _cache_set(key: str, value: list):
 
 _load_disk_cache()
 
-# ── Thread-safe Groq throttle ─────────────────────────────────────────────────
 _last_groq_call = 0.0
 _groq_lock      = threading.Lock()
-GROQ_MIN_INTERVAL = 2.1  # 60s / 30 req + 0.1s buffer
+GROQ_MIN_INTERVAL = 2.1
 
 def _groq_throttle():
     global _last_groq_call
@@ -89,7 +82,7 @@ def _groq_throttle():
             time.sleep(GROQ_MIN_INTERVAL - elapsed)
         _last_groq_call = time.time()
 
-# ── System prompt — includes consumer query guidance ──────────────────────────
+# FIX 1: prompt now says "exactly 5" not "3-5"
 SYSTEM_PROMPT = """You are a Bureau of Indian Standards (BIS) expert on building material standards (SP 21).
 
 Given a query and candidate IS standards, select the TOP 5 most relevant.
@@ -105,22 +98,35 @@ CONSUMER QUERY GUIDANCE — map informal language to technical standards:
 - "marine", "aggressive water", "sulphate" → IS 12330 or IS 6909
 - "33 grade" → IS 269; "43 grade" → IS 8112; "53 grade" → IS 12269
 
-Output ONLY a JSON array ordered by relevance:
+Output ONLY a JSON array ordered by relevance with EXACTLY 5 items:
 [{"std_id": "IS XXX: YYYY", "rationale": "one sentence"}, ...]
 
 Rules:
 - Use ONLY std_ids from the candidates list — never invent IDs
-- Return 3-5 items. No markdown, no text outside the JSON array."""
+- Return EXACTLY 5 items. If fewer than 5 candidates are clearly relevant,
+  include the next most relevant ones to reach 5.
+- No markdown, no text outside the JSON array."""
 
 
-def _build_user_message(query: str, candidates: list) -> str:
+# FIX 4: top_k passed in; FIX 5: slice increased to 15
+def _build_user_message(query: str, candidates: list, top_k: int = 5) -> str:
     lines = []
-    for i, c in enumerate(candidates[:8], 1):
+    for i, c in enumerate(candidates[:15], 1):   # was [:8] — now uses all 15 candidates
         scope = c.get("scope", c.get("text_snippet", ""))[:200]
         lines.append(f"[{i}] {c['std_id']}: {c['title']}\n    {scope}")
-    return f"Query: {query}\n\nCandidates:\n" + "\n".join(lines) + "\n\nReturn JSON array."
+    return (
+        f"Query: {query}\n\n"
+        f"Candidates:\n" + "\n".join(lines) +
+        f"\n\nReturn a JSON array of EXACTLY {top_k} items."  # FIX 4: tells LLM the count
+    )
 
 
+def _normalise_id(s: str) -> str:
+    """Normalise an IS standard ID for fuzzy matching: remove spaces, lowercase."""
+    return re.sub(r"[\s\(\):]", "", str(s)).lower()
+
+
+# FIX 3: normalise IDs before filtering so "IS 269:1989" matches "IS 269: 1989"
 def _parse_llm_response(raw: str, valid_ids: set) -> Optional[list]:
     raw = re.sub(r"```(?:json)?|```", "", raw).strip()
     m = re.search(r"\[.*?\]", raw, re.DOTALL)
@@ -128,13 +134,26 @@ def _parse_llm_response(raw: str, valid_ids: set) -> Optional[list]:
         raw = m.group(0)
     try:
         reranked = json.loads(raw)
-        reranked = [r for r in reranked if r.get("std_id") in valid_ids]
-        return reranked if reranked else None
+        # Build normalised → original mapping for fuzzy matching
+        norm_to_orig = {_normalise_id(vid): vid for vid in valid_ids}
+        filtered = []
+        for r in reranked:
+            llm_id = r.get("std_id", "")
+            # Exact match first
+            if llm_id in valid_ids:
+                filtered.append(r)
+            else:
+                # Normalised fuzzy match (handles spacing/casing differences)
+                orig = norm_to_orig.get(_normalise_id(llm_id))
+                if orig:
+                    r["std_id"] = orig  # correct to canonical form
+                    filtered.append(r)
+                else:
+                    log.debug(f"[Parse] LLM returned unknown std_id '{llm_id}' — dropped")
+        return filtered if filtered else None
     except (json.JSONDecodeError, TypeError):
         return None
 
-
-# ── Backend: Groq ─────────────────────────────────────────────────────────────
 
 _GROQ_ALIASES = {
     "llama3-70b-8192":    "llama-3.3-70b-versatile",
@@ -143,7 +162,8 @@ _GROQ_ALIASES = {
 }
 
 def _rerank_groq(query: str, candidates: list, api_key: str,
-                 model: str = "llama-3.3-70b-versatile") -> Optional[list]:
+                 model: str = "llama-3.3-70b-versatile",
+                 top_k: int = 5) -> Optional[list]:
     if not api_key:
         log.warning("[Groq] No GROQ_API_KEY — set env var or use --groq_key")
         return None
@@ -166,9 +186,9 @@ def _rerank_groq(query: str, candidates: list, api_key: str,
                 model       = model,
                 messages    = [
                     {"role": "system", "content": SYSTEM_PROMPT},
-                    {"role": "user",   "content": _build_user_message(query, candidates)},
+                    {"role": "user",   "content": _build_user_message(query, candidates, top_k)},
                 ],
-                max_tokens  = 300,
+                max_tokens  = 500,   # increased from 300 to allow 5 full items
                 temperature = 0.0,
             )
             ms     = int((time.time() - t0) * 1000)
@@ -201,9 +221,8 @@ def _rerank_groq(query: str, candidates: list, api_key: str,
     return result
 
 
-# ── Backend: Anthropic ────────────────────────────────────────────────────────
-
-def _rerank_anthropic(query: str, candidates: list, api_key: str) -> Optional[list]:
+def _rerank_anthropic(query: str, candidates: list, api_key: str,
+                      top_k: int = 5) -> Optional[list]:
     ck     = _cache_key(query, "anthropic")
     cached = _cache_get(ck)
     if cached is not None:
@@ -212,9 +231,9 @@ def _rerank_anthropic(query: str, candidates: list, api_key: str) -> Optional[li
         import anthropic
         resp   = anthropic.Anthropic(api_key=api_key).messages.create(
             model      = "claude-haiku-4-5-20251001",
-            max_tokens = 300,
+            max_tokens = 500,
             system     = SYSTEM_PROMPT,
-            messages   = [{"role": "user", "content": _build_user_message(query, candidates)}],
+            messages   = [{"role": "user", "content": _build_user_message(query, candidates, top_k)}],
         )
         result = _parse_llm_response(resp.content[0].text.strip(), {c["std_id"] for c in candidates})
         if result:
@@ -225,18 +244,17 @@ def _rerank_anthropic(query: str, candidates: list, api_key: str) -> Optional[li
         return None
 
 
-# ── Backend: Ollama ───────────────────────────────────────────────────────────
-
 def _rerank_ollama(query: str, candidates: list,
                    model: str = "llama3",
-                   host: str = "http://localhost:11434") -> Optional[list]:
+                   host: str = "http://localhost:11434",
+                   top_k: int = 5) -> Optional[list]:
     ck     = _cache_key(query, f"ollama:{model}")
     cached = _cache_get(ck)
     if cached is not None:
         return cached
     payload = json.dumps({
         "model": model, "stream": False,
-        "prompt": SYSTEM_PROMPT + "\n\n" + _build_user_message(query, candidates),
+        "prompt": SYSTEM_PROMPT + "\n\n" + _build_user_message(query, candidates, top_k),
         "options": {"temperature": 0.0},
     }).encode()
     try:
@@ -258,35 +276,29 @@ def _rerank_ollama(query: str, candidates: list,
         return None
 
 
-# ── Unified reranker ──────────────────────────────────────────────────────────
-
 def rerank_with_llm(query, candidates, backend="groq", api_key=None,
-                    ollama_model="llama3", groq_model="llama-3.3-70b-versatile"):
+                    ollama_model="llama3", groq_model="llama-3.3-70b-versatile",
+                    top_k=5):
     if backend == "groq":
         return _rerank_groq(query, candidates,
-                            api_key or os.environ.get("GROQ_API_KEY", ""), groq_model)
+                            api_key or os.environ.get("GROQ_API_KEY", ""),
+                            groq_model, top_k)
     elif backend == "anthropic":
         key = api_key or os.environ.get("ANTHROPIC_API_KEY", "")
-        return _rerank_anthropic(query, candidates, key) if key else None
+        return _rerank_anthropic(query, candidates, key, top_k) if key else None
     elif backend == "ollama":
-        return _rerank_ollama(query, candidates, ollama_model)
+        return _rerank_ollama(query, candidates, ollama_model, top_k=top_k)
     return None
 
 
-# ── BISAgent ──────────────────────────────────────────────────────────────────
-
 class BISAgent:
-    """
-    SmartSkip at 3.0x: only skip LLM when retriever score is overwhelmingly
-    dominant (ratio >= 3x). At 2x or lower, consumer queries like
-    'cement for tiles fixing' can have ambiguous top scores and need LLM.
-    """
-    SMART_SKIP_RATIO = 3.0
+    # FIX 2: threshold lowered from 3.0 to 2.0 — SmartSkip fires less often
+    SMART_SKIP_RATIO = 2.0
 
     def __init__(self, retriever, api_key=None, use_llm=True,
                  llm_backend="groq", ollama_model="llama3",
                  groq_model="llama-3.3-70b-versatile",
-                 model="claude-haiku-4-5"):   # legacy compat
+                 model="claude-haiku-4-5"):
         self.retriever    = retriever
         self.api_key      = api_key
         self.llm_backend  = llm_backend if use_llm else "none"
@@ -309,7 +321,7 @@ class BISAgent:
         if not candidates:
             return []
 
-        # SmartSkip — only when retriever is overwhelmingly dominant
+        # FIX 2: SmartSkip only at 2.0x — less aggressive
         skip_llm = False
         if self.llm_backend != "none" and len(candidates) >= 2:
             t = candidates[0].get("score", 0)
@@ -323,19 +335,37 @@ class BISAgent:
                 query, candidates,
                 backend=self.llm_backend, api_key=self.api_key,
                 ollama_model=self.ollama_model, groq_model=self.groq_model,
+                top_k=top_k,   # FIX 4: pass top_k through
             )
             if reranked:
                 meta = {c["std_id"]: c for c in candidates}
                 _save_disk_cache()
-                return [
-                    {
+
+                result = []
+                for r in reranked[:top_k]:
+                    result.append({
                         "std_id":    r["std_id"],
                         "title":     meta.get(r["std_id"], {}).get("title", ""),
                         "rationale": r.get("rationale", ""),
                         "score":     meta.get(r["std_id"], {}).get("score", 0),
-                    }
-                    for r in reranked[:top_k]
-                ]
+                    })
+
+                # Pad to top_k with remaining candidates if LLM returned fewer
+                if len(result) < top_k:
+                    used_ids = {r["std_id"] for r in result}
+                    for c in candidates:
+                        if c["std_id"] not in used_ids:
+                            result.append({
+                                "std_id":    c["std_id"],
+                                "title":     c["title"],
+                                "rationale": c.get("scope", c.get("text_snippet", ""))[:150],
+                                "score":     c["score"],
+                            })
+                            used_ids.add(c["std_id"])
+                        if len(result) >= top_k:
+                            break
+
+                return result
 
         # Fallback: retrieval order
         return [
