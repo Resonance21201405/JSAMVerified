@@ -1,152 +1,128 @@
 [
   {
-    "id": "Q66",
-    "query": "bis code for ordinary portland cement 33 grade specification",
+    "id": "PUB-01",
+    "query": "We are a small enterprise manufacturing 33 Grade Ordinary Portland Cement. Which BIS standard covers the chemical and physical requirements for our product?",
     "retrieved_standards": [
-      "IS 269: 1989",
-      "IS 4032: 1985",
-      "IS 12269: 1987",
-      "IS 1489 (Part 1): 1991",
-      "IS 12330: 1988"
+      "IS 269: 1989"
     ],
-    "latency_seconds": 0.002,
+    "latency_seconds": 1.453,
     "expected_standards": [
-      "IS 269:1989"
+      "IS 269: 1989"
     ]
   },
   {
-    "id": "Q67",
-    "query": "standard covering blended cement with pozzolanic materials in india",
+    "id": "PUB-02",
+    "query": "I need to comply with the regulations for coarse and fine aggregates derived from natural sources intended for use in structural concrete.",
     "retrieved_standards": [
-      "IS 1489 (Part 1): 1991",
-      "IS 383: 1970",
-      "IS 1489 (Part 2): 1991",
-      "IS 1542: 1992",
-      "IS 4098: 1983"
+      "IS 383: 1970"
     ],
-    "latency_seconds": 7.098,
+    "latency_seconds": 2.01,
     "expected_standards": [
-      "IS 1489 (Part 1):1991"
+      "IS 383: 1970"
     ]
   },
   {
-    "id": "Q68",
-    "query": "which bis standard is used for slag based cement in aggressive environments",
+    "id": "PUB-03",
+    "query": "What is the official specification for manufacturing precast concrete pipes, both with and without reinforcement, for water mains?",
+    "retrieved_standards": [
+      "IS 458: 2003"
+    ],
+    "latency_seconds": 2.088,
+    "expected_standards": [
+      "IS 458: 2003"
+    ]
+  },
+  {
+    "id": "PUB-04",
+    "query": "Our company is shifting to manufacturing hollow and solid lightweight concrete masonry blocks. What standard outlines the dimensions and physical requirements?",
+    "retrieved_standards": [
+      "IS 2185 (Part 1): 1979",
+      "IS 2185 (Part 2): 1983",
+      "IS 2185 (Part 3): 1984",
+      "IS 12440: 1988",
+      "IS 9142: 1979"
+    ],
+    "latency_seconds": 2.551,
+    "expected_standards": [
+      "IS 2185 (Part 2): 1983"
+    ]
+  },
+  {
+    "id": "PUB-05",
+    "query": "Looking for the standard detailing corrugated and semi-corrugated asbestos cement sheets used for roofing and cladding.",
+    "retrieved_standards": [
+      "IS 459: 1992",
+      "IS 1626: 1984",
+      "IS 13008: 1990",
+      "IS 1626 (Part 2): 1994",
+      "IS 2096: 1992"
+    ],
+    "latency_seconds": 1.765,
+    "expected_standards": [
+      "IS 459: 1992"
+    ]
+  },
+  {
+    "id": "PUB-06",
+    "query": "What is the Indian Standard covering the manufacture, chemical, and physical requirements for Portland slag cement?",
     "retrieved_standards": [
       "IS 455: 1989",
-      "IS 12330: 1988",
-      "IS 6909: 1990",
-      "IS 3709: 1966",
-      "IS 12269: 1987"
-    ],
-    "latency_seconds": 4.237,
-    "expected_standards": [
-      "IS 455:1989"
-    ]
-  },
-  {
-    "id": "Q69",
-    "query": "code reference for sulphate resisting portland cement in foundations",
-    "retrieved_standards": [
-      "IS 12330: 1988",
-      "IS 12269: 1987",
+      "IS 1489 (Part 2): 1991",
       "IS 8112: 1989",
       "IS 12600: 1989",
       "IS 8043: 1991"
     ],
-    "latency_seconds": 4.815,
+    "latency_seconds": 2.19,
     "expected_standards": [
-      "IS 12330:1988"
+      "IS 455: 1989"
     ]
   },
   {
-    "id": "Q70",
-    "query": "bis specification for cement used in high early strength applications",
+    "id": "PUB-07",
+    "query": "We are setting up a plant to produce Portland pozzolana cement that is calcined clay based. What is the applicable standard?",
     "retrieved_standards": [
+      "IS 1489 (Part 2): 1991"
+    ],
+    "latency_seconds": 2.37,
+    "expected_standards": [
+      "IS 1489 (Part 2): 1991"
+    ]
+  },
+  {
+    "id": "PUB-08",
+    "query": "Which standard applies to masonry cement used for general purposes where mortars for masonry are required, but not intended for structural concrete?",
+    "retrieved_standards": [
+      "IS 3466: 1988",
+      "IS 8112: 1989",
       "IS 12269: 1987",
       "IS 12600: 1989",
-      "IS 6452: 1989",
-      "IS 455: 1989",
-      "IS 2090: 1983"
+      "IS 4996: 1984"
     ],
-    "latency_seconds": 5.684,
+    "latency_seconds": 2.627,
     "expected_standards": [
-      "IS 8041:1990"
+      "IS 3466: 1988"
     ]
   },
   {
-    "id": "Q71",
-    "query": "standard for cement with water repellent properties for humid conditions",
+    "id": "PUB-09",
+    "query": "Looking for the standard that details the composition, manufacture, and testing of supersulphated cement, particularly for marine works or aggressive water conditions.",
     "retrieved_standards": [
-      "IS 12027: 1987",
-      "IS 8043: 1991",
-      "IS 455: 1989",
-      "IS 14276: 1995",
-      "IS 13356: 1992"
+      "IS 6909: 1990"
     ],
-    "latency_seconds": 4.779,
+    "latency_seconds": 1.308,
     "expected_standards": [
-      "IS 8043:1991"
+      "IS 6909: 1990"
     ]
   },
   {
-    "id": "Q72",
-    "query": "which code specifies requirements for cement in reinforced concrete design",
+    "id": "PUB-10",
+    "query": "Our company manufactures White Portland cement for architectural and decorative purposes. Which standard governs its physical and chemical requirements?",
     "retrieved_standards": [
-      "IS 456: 2000",
-      "IS 4996: 1984",
-      "IS 6523: 1983",
-      "IS 13990: 1994",
-      "IS 14241: 1995"
+      "IS 8042: 1989"
     ],
-    "latency_seconds": 4.008,
+    "latency_seconds": 1.713,
     "expected_standards": [
-      "IS 456:2000"
-    ]
-  },
-  {
-    "id": "Q73",
-    "query": "bis standard applicable for aggregates grading and quality in concrete",
-    "retrieved_standards": [
-      "IS 9142: 1979",
-      "IS 6579: 1981",
-      "IS 383: 1970",
-      "IS 3316: 1974",
-      "IS 9510: 1980"
-    ],
-    "latency_seconds": 4.291,
-    "expected_standards": [
-      "IS 383:1970"
-    ]
-  },
-  {
-    "id": "Q74",
-    "query": "code for cement suitable for thermal crack control in large pours",
-    "retrieved_standards": [
-      "IS 12600: 1989",
-      "IS 7509: 1993",
-      "IS 9743: 1990",
-      "IS 6598: 1972",
-      "IS 456: 2000"
-    ],
-    "latency_seconds": 5.627,
-    "expected_standards": [
-      "IS 12600:1989"
-    ]
-  },
-  {
-    "id": "Q75",
-    "query": "which bis specification is used for high strength cement in structural applications",
-    "retrieved_standards": [
-      "IS 12269: 1987",
-      "IS 6452: 1989",
-      "IS 11587: 1986",
-      "IS 3757: 1985",
-      "IS 6623: 2004"
-    ],
-    "latency_seconds": 4.417,
-    "expected_standards": [
-      "IS 12269:1987"
+      "IS 8042: 1989"
     ]
   }
 ]
