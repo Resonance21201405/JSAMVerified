@@ -143,7 +143,7 @@ python ingestion.py --pdf data/dataset.pdf --output data/chunks.json
 python eval_script.py --results results/output.json
 ```
 
-### 6. Web UI (optional)
+### 6. Web UI
 
 ```bash
 streamlit run app.py
