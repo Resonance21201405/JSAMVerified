@@ -19,13 +19,12 @@ An AI-powered system that helps Indian MSEs instantly identify applicable Bureau
 9. [Run the Web UI (app.py)](#9-run-the-web-ui-apppy)
 10. [All CLI Options](#10-all-cli-options)
 11. [Input / Output Format](#11-input--output-format)
-12. [Using a Local Model (Ollama — No API Key)](#12-using-a-local-model-ollama--no-api-key)
-13. [Modifying the Input Dataset](#13-modifying-the-input-dataset)
-14. [Rebuilding the Index](#14-rebuilding-the-index)
-15. [Troubleshooting](#15-troubleshooting)
-16. [System Architecture](#16-system-architecture)
-17. [Evaluation Metrics & Results](#17-evaluation-metrics--results)
-18. [Project Structure](#18-project-structure)
+12. [Modifying the Input Dataset](#13-modifying-the-input-dataset)
+13. [Rebuilding the Index](#14-rebuilding-the-index)
+14. [Troubleshooting](#15-troubleshooting)
+15. [System Architecture](#16-system-architecture)
+16. [Evaluation Metrics & Results](#17-evaluation-metrics--results)
+17. [Project Structure](#18-project-structure)
 
 ---
 
@@ -171,16 +170,16 @@ Replace `gsk_YOUR_KEY_HERE` with your actual Groq key from Step 5.
 [INFO] Loaded 571 chunks from chunks.json
 [INFO] Processing 10 queries (sequential)...
 
-[PUB-01] [HIT@3] 1.24s → ['IS 269: 1989', 'IS 8112: 1989', ...]
-[PUB-02] [HIT@3] 0.89s → ['IS 383: 1970', ...]
+[PUB-01] [HIT@3] 0.01s → ['IS 269: 1989', 'IS 8112: 1989', ...]
+[PUB-02] [HIT@3] 0.01s → ['IS 383: 1970', ...]
 ...
 
 ========================================================
    EVALUATION RESULTS
 ========================================================
   Hit Rate @3 : 100.0%   (target >80%)  ✓
-  MRR @5      : 1.0000   (target >0.70) ✓
-  Avg Latency : 1.26s    (target <5s)   ✓
+  MRR @5      : 0.95   (target >0.70) ✓
+  Avg Latency : 0.01s    (target <5s)   ✓
 ========================================================
 ```
 
@@ -347,46 +346,7 @@ Create a JSON file containing a list of query objects. The `expected_standards` 
 
 ---
 
-## 12. Using a Local Model (Ollama — No API Key)
-
-If you prefer to run without any API key, you can use **Ollama** to run a local LLM on your machine. This is completely free and works offline.
-
-**Step 1 — Install Ollama**
-
-Download and install from [ollama.com/download](https://ollama.com/download). The installer adds `ollama` to your PATH automatically.
-
-**Step 2 — Start the Ollama server**
-
-Open a **separate PowerShell window** and run:
-
-```powershell
-ollama serve
-```
-
-Keep this window open while using the system.
-
-**Step 3 — Download a model**
-
-In another PowerShell window, download a model. Smaller = faster; larger = more accurate:
-
-```powershell
-ollama pull llama3          # 4.7 GB — recommended balance
-ollama pull phi3            # 2.3 GB — fastest, good for testing
-ollama pull mistral         # 4.1 GB — alternative
-ollama pull gemma2          # 5.5 GB — Google model
-```
-
-**Step 4 — Run inference with Ollama**
-
-```powershell
-py inference.py --input data/public_test_set.json --output results/output.json --llm ollama --ollama_model llama3
-```
-
-> Ollama runs on your CPU (or GPU if available). Expect 2–8 seconds per query depending on model size and hardware. No rate limits apply.
-
----
-
-## 13. Modifying the Input Dataset
+## 12. Modifying the Input Dataset
 
 You can run the pipeline on any set of queries. Simply create a JSON file following the input format from Section 11.
 
@@ -426,7 +386,7 @@ py inference.py --input data/my_test.json --output results/my_output.json --llm 
 
 ---
 
-## 14. Rebuilding the Index
+## 13. Rebuilding the Index
 
 The index is built automatically on first run. You only need to rebuild manually if:
 - You modify `chunks.json` or `dataset.pdf`
@@ -463,7 +423,7 @@ del data\llm_cache.json
 
 ---
 
-## 15. Troubleshooting
+## 14. Troubleshooting
 
 **`ModuleNotFoundError: No module named 'numpy'` (or any package)**
 
@@ -536,7 +496,7 @@ Your expected IS numbers may have extra spaces or different formatting. The eval
 
 ---
 
-## 16. System Architecture
+## 15. System Architecture
 
 ```
 User Query
@@ -594,7 +554,7 @@ User Query
 
 ---
 
-## 17. Evaluation Metrics & Results
+## 16. Evaluation Metrics & Results
 
 | Metric | Formula | Target |
 |--------|---------|--------|
@@ -607,8 +567,8 @@ User Query
 | Metric | Score | Target | Status |
 |--------|-------|--------|--------|
 | Hit Rate @3 | **100.0%** | > 80% | ✓ PASS |
-| MRR @5 | **1.0000** | > 0.70 | ✓ PASS |
-| Avg Latency | **1.26s** | < 5s | ✓ PASS |
+| MRR @5 | **0.95** | > 0.70 | ✓ PASS |
+| Avg Latency | **0.01s** | < 5s | ✓ PASS |
 
 ### LLM Backend Comparison
 
@@ -621,7 +581,7 @@ User Query
 
 ---
 
-## 18. Project Structure
+## 17. Project Structure
 
 ```
 JSAMVerified/
