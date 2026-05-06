@@ -478,18 +478,6 @@ py -m streamlit run app.py
 
 ---
 
-**Ollama: `Cannot connect to http://localhost:11434`**
-
-The Ollama server is not running. Open a separate PowerShell window and run:
-
-```powershell
-ollama serve
-```
-
-Keep it running while you use `--llm ollama`.
-
----
-
 **Results saved but eval shows 0% hit rate**
 
 Your expected IS numbers may have extra spaces or different formatting. The evaluation normalises spacing, but make sure the format is `IS XXXX: YYYY` (number, colon, space, year). Both `IS 269: 1989` and `IS 269:1989` are accepted by the eval script.
