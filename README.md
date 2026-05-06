@@ -203,8 +203,8 @@ This prints the three hackathon metrics:
 ========================================
 Total Queries Evaluated : 10
 Hit Rate @3             : 100.00%   (Target: >80%)
-MRR @5                  : 1.0000    (Target: >0.7)
-Avg Latency             : 1.26 sec  (Target: <5 seconds)
+MRR @5                  : 0.95    (Target: >0.7)
+Avg Latency             : 0.01 sec  (Target: <5 seconds)
 ========================================
 ```
 
